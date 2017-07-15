@@ -513,7 +513,9 @@ static void skel_poll(struct input_polled_dev *polldev)
   struct input_dev *input = polldev->input;
   printk("%s\n", __func__);
   input_mt_sync_frame(input);
+  printk("%s input_mt_sync_frame done\n", __func__);
   input_sync(input);
+  printk("%s input_sync done\n", __func__);
 }
 
 static int skel_probe(struct usb_interface *interface,
@@ -599,6 +601,9 @@ static int skel_probe(struct usb_interface *interface,
 	usb_make_path(dev->udev, dev->phys, sizeof(dev->phys));
 	strlcat(dev->phys, "/input0", sizeof(dev->phys));
 
+	poll_dev->input->phys = dev->phys;
+	poll_dev->input->dev.parent = &interface->dev;
+	
 	dev->input = poll_dev;
 	
 	retval = input_register_polled_device(poll_dev);
