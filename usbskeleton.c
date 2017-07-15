@@ -37,6 +37,11 @@ MODULE_LICENSE("GPL");
 #define POLL_INTERVAL 25
 #define NAME_LONG "GreenTouch MT"
 
+/* sensor resolution */
+#define SENSOR_RES_X 1920
+#define SENSOR_RES_Y 1080
+#define MAX_CONTACTS 10
+
 /* table of devices that work with this driver */
 static const struct usb_device_id skel_table[] = {
 	{ USB_DEVICE(USB_SKEL_VENDOR_ID, USB_SKEL_PRODUCT_ID) },
@@ -518,6 +523,36 @@ static void skel_poll(struct input_polled_dev *polldev)
   printk("%s input_sync done\n", __func__);
 }
 
+
+/* Initialize input device parameters. */
+static void input_setup(struct input_dev *input_dev)
+{
+        __set_bit(EV_KEY, input_dev->evbit);
+	__set_bit(EV_ABS, input_dev->evbit);
+
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
+			     0, SENSOR_RES_X, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+			     0, SENSOR_RES_Y, 0, 0);
+
+	input_set_abs_params(input_dev, ABS_MT_TOOL_X,
+			     0, SENSOR_RES_X, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOOL_Y,
+			     0, SENSOR_RES_Y, 0, 0);
+
+	/* max value unknown, but major/minor axis
+	 * can never be larger than screen */
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
+			     0, SENSOR_RES_X, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR,
+			     0, SENSOR_RES_Y, 0, 0);
+
+	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, 0, 1, 0, 0);
+
+	input_mt_init_slots(input_dev, MAX_CONTACTS,
+			    INPUT_MT_DIRECT | INPUT_MT_DROP_UNUSED);
+}
+
 static int skel_probe(struct usb_interface *interface,
 		      const struct usb_device_id *id)
 {
@@ -595,6 +630,7 @@ static int skel_probe(struct usb_interface *interface,
 	poll_dev->poll_interval = POLL_INTERVAL;
 	poll_dev->poll = skel_poll;
 
+	input_setup(poll_dev->input);
         
 	poll_dev->input->name = NAME_LONG;
 	usb_to_input_id(dev->udev, &poll_dev->input->id);
