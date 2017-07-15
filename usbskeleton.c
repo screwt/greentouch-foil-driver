@@ -12,6 +12,7 @@
  *
  */
 
+
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
@@ -20,7 +21,9 @@
 #include <linux/uaccess.h>
 #include <linux/usb.h>
 #include <linux/mutex.h>
-
+#include <linux/input-polldev.h>
+#include <linux/usb/input.h>
+#include <linux/input/mt.h>
 
 MODULE_AUTHOR("Benoit Juin <benoit@aeon-creation.com>");
 MODULE_DESCRIPTION("GreenTouch touch foil device driver");
@@ -30,6 +33,9 @@ MODULE_LICENSE("GPL");
 /* Define these values to match your devices */
 #define USB_SKEL_VENDOR_ID	0x0547
 #define USB_SKEL_PRODUCT_ID	0x2001 
+
+#define POLL_INTERVAL 25
+#define NAME_LONG "GreenTouch MT"
 
 /* table of devices that work with this driver */
 static const struct usb_device_id skel_table[] = {
@@ -69,6 +75,8 @@ struct usb_skel {
 	struct kref		kref;
 	struct mutex		io_mutex;		/* synchronize I/O with disconnect */
 	wait_queue_head_t	bulk_in_wait;		/* to wait for an ongoing read */
+        char phys[64];
+        struct input_polled_dev *input;
 };
 #define to_skel_dev(d) container_of(d, struct usb_skel, kref)
 
@@ -499,16 +507,27 @@ static struct usb_class_driver skel_class = {
 	.minor_base =	USB_SKEL_MINOR_BASE,
 };
 
+/* core function: poll for new input data */
+static void skel_poll(struct input_polled_dev *polldev)
+{
+  struct input_dev *input = polldev->input;
+  printk("%s\n", __func__);
+  input_mt_sync_frame(input);
+  input_sync(input);
+}
+
 static int skel_probe(struct usb_interface *interface,
 		      const struct usb_device_id *id)
 {
 	struct usb_skel *dev;
 	struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
+	struct input_polled_dev *poll_dev;
+	
 	size_t buffer_size;
 	int i;
 	int retval = -ENOMEM;
-
+	
 	/* allocate memory for our device state and initialize it */
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev) {
@@ -563,18 +582,43 @@ static int skel_probe(struct usb_interface *interface,
 		goto error;
 	}
 
+	poll_dev = input_allocate_polled_device();
+	if (!poll_dev) {
+		retval = -ENOMEM;
+		goto error;
+	}
+	/* Set up polled input device control structure */
+	poll_dev->private = dev;
+	poll_dev->poll_interval = POLL_INTERVAL;
+	poll_dev->poll = skel_poll;
+
+        
+	poll_dev->input->name = NAME_LONG;
+	usb_to_input_id(dev->udev, &poll_dev->input->id);
+	usb_make_path(dev->udev, dev->phys, sizeof(dev->phys));
+	strlcat(dev->phys, "/input0", sizeof(dev->phys));
+
+	dev->input = poll_dev;
+	
+	retval = input_register_polled_device(poll_dev);
+	if (retval) {
+		dev_err(&interface->dev,
+			"Unable to register polled input device.");
+		goto error;
+	}
+
 	/* save our data pointer in this interface device */
 	usb_set_intfdata(interface, dev);
 
 	/* we can register the device now, as it is ready */
-	retval = usb_register_dev(interface, &skel_class);
-	if (retval) {
-		/* something prevented us from registering this driver */
-		dev_err(&interface->dev,
-			"Not able to get a minor for this device.\n");
-		usb_set_intfdata(interface, NULL);
-		goto error;
-	}
+	//retval = usb_register_dev(interface, &skel_class);
+	//if (retval) {
+	//	/* something prevented us from registering this driver */
+	//	dev_err(&interface->dev,
+	//		"Not able to get a minor for this device.\n");
+	//	usb_set_intfdata(interface, NULL);
+	//	goto error;
+	//}
 
 	/* let the user know what node this device is now attached to */
 	dev_info(&interface->dev,
