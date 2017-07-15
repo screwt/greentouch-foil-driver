@@ -585,6 +585,7 @@ static int skel_probe(struct usb_interface *interface,
 	poll_dev = input_allocate_polled_device();
 	if (!poll_dev) {
 		retval = -ENOMEM;
+		printk("Error allocating polled dev");
 		goto error;
 	}
 	/* Set up polled input device control structure */
@@ -602,6 +603,7 @@ static int skel_probe(struct usb_interface *interface,
 	
 	retval = input_register_polled_device(poll_dev);
 	if (retval) {
+	        printk("Error registering polled dev");
 		dev_err(&interface->dev,
 			"Unable to register polled input device.");
 		goto error;
